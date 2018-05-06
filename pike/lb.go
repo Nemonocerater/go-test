@@ -7,17 +7,8 @@ import (
 	"strconv"
 )
 
-func Sleep() {
+func Sleep(dur int64) {
 	time.Sleep(2 * time.Second)
-}
-
-var NUM_WORKERS = 5
-
-/******* Request *******/
-
-type Request struct {
-	fn func() int
-	c chan int
 }
 
 /******* Worker *******/
@@ -30,8 +21,7 @@ type Worker struct {
 
 func (w *Worker) work(done chan *Worker) {
 	for {
-		req := <-w.requests
-		req.c <- req.fn()
+		fmt.Println("work(" + strconv.Itoa(w.index) + ")")
 		done <- w
 	}
 }
@@ -61,7 +51,7 @@ func (b *Balancer) balance(work chan Request) {
 		case w := <-b.done:
 			b.complete(w)
 		case req := <-work:
-			go b.dispatch(req)
+			b.dispatch(req)
 		default:
 			fmt.Print("...\r")
 		}
@@ -77,12 +67,14 @@ func (b *Balancer) dispatch(req Request) {
 	}
 
 	worker.pending++
-	worker.requests <- req
 	fmt.Println("Dispatching work to " + strconv.Itoa(worker.index) + "[" + strconv.Itoa(worker.pending) + "]")
+	worker.requests <- req
 }
 
 func (b *Balancer) complete(worker *Worker) {
+	//fmt.Println("Completing worker " + strconv.Itoa(worker.index))
 	worker.pending--
+	fmt.Println("complete: " + strconv.Itoa(worker.index) + "[" + strconv.Itoa(worker.pending) + "]")
 }
 
 
@@ -91,15 +83,17 @@ func (b *Balancer) complete(worker *Worker) {
 
 func requester(work chan<- Request) {
 	c := make(chan int)
-	Sleep()
+	Sleep(rand.Int63n(10000))
 
+	//fmt.Println("...requesting work")
 	work <- Request{fn: workfn, c: c}
+	//fmt.Println("...requested work")
 	result := <-c
 	furtherProcess(result)
 }
 
 func workfn() int {
-	Sleep()
+	Sleep(10000)
 	return int(time.Now().Unix())
 }
 
@@ -110,11 +104,29 @@ func furtherProcess(result int) {
 func main() {
 	input := make(chan Request)
 
-	for i := 0; i < 17; i++ {
+	for i := 0; i < 3; i++ {
 		go requester(input)
 	}
 
 	var balancer Balancer
-	balancer.init(NUM_WORKERS)
+	balancer.init(1)
 	balancer.balance(input)
+
+
+/*
+	d := make(chan *Worker)
+	w := Worker{requests: input, pending: 0, index: 124}
+	go w.work(d)
+
+	Sleep(10000)
+	for {
+		select{
+		case req := <-input:
+			req.c <- req.fn()
+		case w := <-d:
+			fmt.Println("ending..." + strconv.Itoa(w.index))
+		default:
+		}
+	}
+*/
 }
